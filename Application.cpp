@@ -30,6 +30,7 @@ const std::vector<char const*> validationLayers = {
     "VK_LAYER_KHRONOS_validation" // single bundled main validation layer, can replace with individual ones though
 };
 
+std::vector<const char*> requiredDeviceExtensions = { vk::KHRSwapchainExtensionName };
 
 void Application::run() {
     initWindow();
@@ -54,43 +55,80 @@ void Application::initVulkan() {
     }
 }
 
+// Simple physical device scoring system
+int Application::scoreDevice(vk::raii::PhysicalDevice &pd) {
+    vk::PhysicalDeviceProperties deviceProperties = pd.getProperties();
+    uint32_t score = 0;
+    
+    if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+        score += 1000;
+    }
+    score += deviceProperties.limits.maxImageDimension2D;
+    return score;
+}
+
+// checks if a physical device is suitable
+bool Application::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevice) {
+    // check if supports vulkan1.3
+    bool supportsVulkan1_3 = physicalDevice.getProperties().apiVersion >= vk::ApiVersion13;
+
+    // get all of the device supported queue families:
+    auto queueFamilies = physicalDevice.getQueueFamilyProperties();
+    bool supportsGraphics = std::ranges::any_of(queueFamilies, [](auto const& qfp) {return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics); });
+    
+    // todo: continue by checking 
+    auto availableDeviceExtensions = physicalDevice.enumerateDeviceExtensionProperties();
+    bool supportsRequiredExtensions = std::ranges::all_of(requiredDeviceExtensions, 
+        [&availableDeviceExtensions](auto const& requiredDeviceExtension){
+            return std::ranges::any_of(availableDeviceExtensions,
+                [requiredDeviceExtension](auto const & availableDeviceExtension){
+                    return strcmp(requiredDeviceExtension, availableDeviceExtension.extensionName) == 0;
+                }
+            );
+        }
+    );
+
+    // check if the device supports the required features:
+    return supportsVulkan1_3 && supportsGraphics && supportsRequiredExtensions;
+}
 
 void Application::pickPhysicalDevice() {
-    auto physicalDevices = vk::raii::PhysicalDevices(instance);
-    // If no device with vulkan support, throw in the towel
-    if (physicalDevices.empty())
-    {
-        throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    }
-    physicalDeviceOptions = physicalDevices;
+    std::vector<vk::raii::PhysicalDevice> physicalDevices = vk::raii::PhysicalDevices(instance);
 
+    // If no device with vulkan support, throw in the towel
+    //if (physicalDevices.empty())
+    //{
+    //    throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    //}
+       
+    
     // score devices
     // using ordered multimap (ascending order)
-    std::multimap<int, vk::raii::PhysicalDevice> pdCandidates;
+    //std::multimap<int, vk::raii::PhysicalDevice> pdCandidates;
     for (auto& pd : physicalDevices) {
-        vk::PhysicalDeviceProperties deviceProperties = pd.getProperties();
-        vk::PhysicalDeviceFeatures deviceFeatures = pd.getFeatures();
-        uint32_t score = 0;
-
-        if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
-            score += 1000;
-        }
-        score += deviceProperties.limits.maxImageDimension2D;
-        // if no geometry shader support, reject
-        if (!deviceFeatures.geometryShader) {
-            continue;
-        }
-        // reject device if it doesn't at least support Vk 13
-        if (deviceProperties.apiVersion < vk::ApiVersion13) {
-            continue;
-        }
-        pdCandidates.insert(std::make_pair(score, pd));
-    }
-    if (!pdCandidates.empty() && pdCandidates.rbegin()->first > 0) {
-        selectedPhysicalDevice = pdCandidates.rbegin()->second;
-    }
-    else {
-        throw std::runtime_error("Failed to find a suitable GPU!");
+    //    vk::PhysicalDeviceProperties deviceProperties = pd.getProperties();
+    //    vk::PhysicalDeviceFeatures deviceFeatures = pd.getFeatures();
+    //    uint32_t score = 0;
+    //
+    //    if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+    //        score += 1000;
+    //    }
+    //    score += deviceProperties.limits.maxImageDimension2D;
+    //    // if no geometry shader support, reject
+    //    if (!deviceFeatures.geometryShader) {
+    //        continue;
+    //    }
+    //    // reject device if it doesn't at least support Vk 13
+    //    if (deviceProperties.apiVersion < vk::ApiVersion13) {
+    //        continue;
+    //    }
+    //    pdCandidates.insert(std::make_pair(score, pd));
+    //}
+    //if (!pdCandidates.empty() && pdCandidates.rbegin()->first > 0) {
+    //    selectedPhysicalDevice = pdCandidates.rbegin()->second;
+    //}
+    //else {
+    //    throw std::runtime_error("Failed to find a suitable GPU!");
     }
 }
 // runs the main vulkan loop

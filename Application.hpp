@@ -22,7 +22,6 @@ private:
 	vk::raii::Context context;
 	vk::raii::Instance instance = nullptr;
 	vk::raii::PhysicalDevice selectedPhysicalDevice = nullptr;
-	std::vector<vk::raii::PhysicalDevice> physicalDeviceOptions;
 
 	void initWindow();
 	void initVulkan();
@@ -30,7 +29,8 @@ private:
 	void mainLoop();
 	void cleanup();
 	void createInstance();
-	bool isDeviceSuitable();
+	bool isDeviceSuitable(const vk::raii::PhysicalDevice & physicalDevice);
+	int scoreDevice(vk::raii::PhysicalDevice &pd);
 	
 };
 }
