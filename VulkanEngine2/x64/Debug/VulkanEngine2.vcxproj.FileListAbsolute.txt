@@ -1,2 +1,0 @@
-C:\Users\larry\source\repos\VulkanEngine2\x64\Debug\glfw3.dll
-C:\Users\larry\source\repos\VulkanEngine2\VulkanEngine2\x64\Debug\VulkanEn.9A0F90A4.Up2Date
