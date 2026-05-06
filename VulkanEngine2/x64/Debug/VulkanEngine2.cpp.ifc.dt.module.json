@@ -1,0 +1,21 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "VulkanEngine2\\x64\\Debug\\VulkanEngine2.obj",
+            "outputs": [
+                "VulkanEngine2\\x64\\Debug\\VulkanEngine2.cpp.ifc.dt.module.json",
+                "VulkanEngine2\\x64\\Debug\\VulkanEngine2.cpp.ifc.dt.d.json"
+            ],
+            "requires": [
+                {
+                    "logical-name": "std"
+                },
+                {
+                    "logical-name": "vulkan"
+                }
+            ]
+        }
+    ]
+}

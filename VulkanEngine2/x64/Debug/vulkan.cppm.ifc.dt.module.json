@@ -1,0 +1,32 @@
+{
+    "version": 1,
+    "revision": 0,
+    "rules": [
+        {
+            "primary-output": "VulkanEngine2\\x64\\Debug\\vulkan.obj",
+            "outputs": [
+                "VulkanEngine2\\x64\\Debug\\vulkan.cppm.ifc.dt.module.json",
+                "VulkanEngine2\\x64\\Debug\\vulkan.cppm.ifc.dt.d.json",
+                "VulkanEngine2\\x64\\Debug\\vulkan.ifc"
+            ],
+            "provides": [
+                {
+                    "logical-name": "vulkan",
+                    "source-path": "c:\\vulkansdk\\1.4.341.1\\include\\vulkan\\vulkan.cppm",
+                    "is-interface": true
+                }
+            ],
+            "requires": [
+                {
+                    "logical-name": "std"
+                },
+                {
+                    "logical-name": "vulkan:video"
+                },
+                {
+                    "logical-name": "std"
+                }
+            ]
+        }
+    ]
+}
