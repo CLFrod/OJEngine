@@ -22,15 +22,23 @@ private:
 	vk::raii::Context context;
 	vk::raii::Instance instance = nullptr;
 	vk::raii::PhysicalDevice selectedPhysicalDevice = nullptr;
+	vk::raii::Device device = nullptr;
+	vk::raii::Queue graphicsQueue;
+	vk::raii::SurfaceKHR surface = nullptr;
 
 	void initWindow();
 	void initVulkan();
-	void pickPhysicalDevice();
 	void mainLoop();
 	void cleanup();
 	void createInstance();
+	void createSurface();
+	
+	// Physical Device Related Functions
+	void pickPhysicalDevice();
 	bool isDeviceSuitable(const vk::raii::PhysicalDevice & physicalDevice);
 	int scoreDevice(vk::raii::PhysicalDevice &pd);
-	
+
+	// Logical Device Creation:
+	void createLogicalDevice();
 };
 }

@@ -49,10 +49,12 @@ void Application::initWindow() {
 // initializes vulkan instance, and etc.
 void Application::initVulkan() {
     createInstance();
+    createSurface();
     pickPhysicalDevice();
     if (enableValidationLayers) {
         std::cout << "Selected Physical Device: " << selectedPhysicalDevice.getProperties().deviceName << "\n";
     }
+    createLogicalDevice();
 }
 
 // Simple physical device scoring system
@@ -78,7 +80,7 @@ bool Application::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevic
     
     // todo: continue by checking 
     auto availableDeviceExtensions = physicalDevice.enumerateDeviceExtensionProperties();
-    bool supportsRequiredExtensions = std::ranges::all_of(requiredDeviceExtensions, 
+    bool supportsAllRequiredExtensions = std::ranges::all_of(requiredDeviceExtensions, 
         [&availableDeviceExtensions](auto const& requiredDeviceExtension){
             return std::ranges::any_of(availableDeviceExtensions,
                 [requiredDeviceExtension](auto const & availableDeviceExtension){
@@ -88,49 +90,73 @@ bool Application::isDeviceSuitable(const vk::raii::PhysicalDevice &physicalDevic
         }
     );
 
-    // check if the device supports the required features:
-    return supportsVulkan1_3 && supportsGraphics && supportsRequiredExtensions;
+    // check if device supports features:
+    // returns a struct with booleans for these specific features. True if devices supports
+    // Needs first PhysicalDeviceFeatures2 to act as the originating link in the struct chain (pNext from base C vk)
+    auto features = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features,vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+    bool supportsAllFeatures = features.get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering && features.get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
+
+    return supportsVulkan1_3 && supportsGraphics && supportsAllRequiredExtensions && supportsAllFeatures;
 }
 
 void Application::pickPhysicalDevice() {
     std::vector<vk::raii::PhysicalDevice> physicalDevices = vk::raii::PhysicalDevices(instance);
-
     // If no device with vulkan support, throw in the towel
-    //if (physicalDevices.empty())
-    //{
-    //    throw std::runtime_error("failed to find GPUs with Vulkan support!");
-    //}
-       
-    
-    // score devices
+    if (physicalDevices.empty())
+    {
+        throw std::runtime_error("failed to find GPUs with Vulkan support!");
+    }
+    // score devices, and check for a suitable device.
     // using ordered multimap (ascending order)
-    //std::multimap<int, vk::raii::PhysicalDevice> pdCandidates;
+    std::multimap<int, vk::raii::PhysicalDevice> pdCandidates;
     for (auto& pd : physicalDevices) {
-    //    vk::PhysicalDeviceProperties deviceProperties = pd.getProperties();
-    //    vk::PhysicalDeviceFeatures deviceFeatures = pd.getFeatures();
-    //    uint32_t score = 0;
-    //
-    //    if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
-    //        score += 1000;
-    //    }
-    //    score += deviceProperties.limits.maxImageDimension2D;
-    //    // if no geometry shader support, reject
-    //    if (!deviceFeatures.geometryShader) {
-    //        continue;
-    //    }
-    //    // reject device if it doesn't at least support Vk 13
-    //    if (deviceProperties.apiVersion < vk::ApiVersion13) {
-    //        continue;
-    //    }
-    //    pdCandidates.insert(std::make_pair(score, pd));
-    //}
-    //if (!pdCandidates.empty() && pdCandidates.rbegin()->first > 0) {
-    //    selectedPhysicalDevice = pdCandidates.rbegin()->second;
-    //}
-    //else {
-    //    throw std::runtime_error("Failed to find a suitable GPU!");
+        if (!isDeviceSuitable(pd)) {
+            continue;
+        }
+        int score = scoreDevice(pd);
+        pdCandidates.insert(std::make_pair(score, pd));
+    }
+    
+    if (!pdCandidates.empty() && pdCandidates.rbegin()->first > 0) {
+        selectedPhysicalDevice = pdCandidates.rbegin()->second;
+    }
+    else {
+        throw std::runtime_error("Failed to find a suitable GPU!");
     }
 }
+
+
+void Application::createLogicalDevice() {
+    // get available queue info for the gpu
+    std::vector<vk::QueueFamilyProperties> queueFamilyProperties = selectedPhysicalDevice.getQueueFamilyProperties();
+    auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp) {return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0); });
+    auto graphicsIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
+    float queuePriority = 0.5f;
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo = vk::DeviceQueueCreateInfo{
+        .queueFamilyIndex = graphicsIndex,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority
+    };
+    vk::PhysicalDeviceFeatures2 deviceFeatures{};
+    vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain{
+        {}, // vk::PhysicalDeviceFeatures2 (empty)
+        {.dynamicRendering = true}, // Enable dynamic rendering from Vulkan 1.3
+        {.extendedDynamicState = true } // Enable extended dynamic state from the extension
+    };
+
+    // logical device create info struct
+    vk::DeviceCreateInfo deviceCreateInfo = vk::DeviceCreateInfo{
+        .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+        .queueCreateInfoCount = 1,
+        .pQueueCreateInfos = &deviceQueueCreateInfo,
+        .enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtensions.size()),
+        .ppEnabledExtensionNames = requiredDeviceExtensions.data(), 
+    };
+
+    device = vk::raii::Device(selectedPhysicalDevice, deviceCreateInfo);
+    graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+}
+
 // runs the main vulkan loop
 void Application::mainLoop() {
     while (!glfwWindowShouldClose(window)) { // checks if window should close, if not, then stay open
