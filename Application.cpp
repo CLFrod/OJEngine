@@ -1,8 +1,9 @@
 #define GLM_FORCE_RADIANS 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE // vulkan 0 - 1
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+
 
 #include "Application.hpp"
+#include <vulkan/vulkan_raii.hpp>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,7 +13,6 @@
 #include <algorithm>
 #include <string>
 #include <map>
-#include <vulkan/vulkan_raii.hpp>
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -55,6 +55,89 @@ void Application::initVulkan() {
         std::cout << "Selected Physical Device: " << selectedPhysicalDevice.getProperties().deviceName << "\n";
     }
     createLogicalDevice();
+}
+
+// runs the main vulkan loop
+void Application::mainLoop() {
+    while (!glfwWindowShouldClose(window)) { // checks if window should close, if not, then stay open
+        glfwPollEvents(); // process input events
+    }
+}
+// cleans up vulkan resources
+void Application::cleanup() {
+    glfwDestroyWindow(window); // destroys current window
+
+    glfwTerminate(); // terminates glfw
+}
+
+
+void Application::createSurface() {
+    VkSurfaceKHR _surface;
+    
+    if(glfwCreateWindowSurface(*instance, window, nullptr, &_surface) != VkResult::VK_SUCCESS){
+        throw std::runtime_error("Failed to create window surface!");
+    }
+    surface = vk::raii::SurfaceKHR(instance, _surface);
+}
+
+// function to create a vulkan instance
+void Application::createInstance() {
+    // get the required validation layers
+    std::vector<const char*> requiredLayers;
+
+    if (enableValidationLayers) {
+        requiredLayers.assign(validationLayers.begin(), validationLayers.end());
+    }
+
+    // Check if the required extensions are supported by the Vulkan implementation.
+    auto layerProperties = context.enumerateInstanceLayerProperties();
+    // only grabs the first unsupported layer. find_if returns an iterator to the first one.
+    auto unsupportedPropertyIt = std::ranges::find_if(requiredLayers, [&layerProperties](auto const& requiredLayer) {
+        return std::ranges::none_of(layerProperties, [requiredLayer](auto const& layerProperty) {return strcmp(requiredLayer, layerProperty.layerName) == 0; });
+        }
+    );
+    if (unsupportedPropertyIt != requiredLayers.end()) {
+        throw std::runtime_error("Required Extension not supported: " + std::string(*unsupportedPropertyIt));
+    }
+
+
+    // create general application info for the instance
+    constexpr vk::ApplicationInfo appInfo = {
+        .pApplicationName = "OJApplication",
+        .applicationVersion = VK_MAKE_VERSION(1,0,0),
+        .pEngineName = "OJEngine",
+        .engineVersion = VK_MAKE_VERSION(1,0,0),
+        .apiVersion = vk::ApiVersion14,
+    };
+
+    // Get correct number of extensions required to use glfw:
+    uint32_t glfwExtensionCount = 0;
+    auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    // check if the extensions are supported by our vulkan instance:
+    auto extensionProperties = context.enumerateInstanceExtensionProperties();
+    for (uint32_t i = 0; i < glfwExtensionCount; i++) {
+        if (std::ranges::none_of(extensionProperties, [glfwExtension = glfwExtensions[i]](auto const& extensionProperty)
+            {return strcmp(extensionProperty.extensionName, glfwExtension) == 0; }))
+        {
+            throw std::runtime_error("Required GLFW extension not supported: " + std::string(glfwExtensions[i]));
+        }
+
+    }
+    // global extensions and validation layers used
+    // finish instance creation
+    // TODO: ensure layers are added, with layercount and layer names.
+    // TODO: read up on layers, and extensions
+    vk::InstanceCreateInfo createInfo{
+        .pApplicationInfo = &appInfo,
+        .enabledLayerCount = static_cast<uint32_t>(requiredLayers.size()),
+        .ppEnabledLayerNames = requiredLayers.data(),
+        .enabledExtensionCount = glfwExtensionCount,
+        .ppEnabledExtensionNames = glfwExtensions,
+    };
+
+    // create instance
+    instance = vk::raii::Instance(context, createInfo);
 }
 
 // Simple physical device scoring system
@@ -129,19 +212,31 @@ void Application::pickPhysicalDevice() {
 void Application::createLogicalDevice() {
     // get available queue info for the gpu
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties = selectedPhysicalDevice.getQueueFamilyProperties();
-    auto graphicsQueueFamilyProperty = std::ranges::find_if(queueFamilyProperties, [](auto const& qfp) {return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0); });
-    auto graphicsIndex = static_cast<uint32_t>(std::distance(queueFamilyProperties.begin(), graphicsQueueFamilyProperty));
-    float queuePriority = 0.5f;
-    vk::DeviceQueueCreateInfo deviceQueueCreateInfo = vk::DeviceQueueCreateInfo{
-        .queueFamilyIndex = graphicsIndex,
-        .queueCount = 1,
-        .pQueuePriorities = &queuePriority
-    };
+    uint32_t queueIndex = ~0;
+    for (uint32_t qfp_index = 0; qfp_index < queueFamilyProperties.size(); qfp_index++) {
+        if ((queueFamilyProperties[qfp_index].queueFlags & vk::QueueFlagBits::eGraphics) && selectedPhysicalDevice.getSurfaceSupportKHR(qfp_index, *surface)) {
+            queueIndex = qfp_index;
+            break;
+        }
+    }
+    if (queueIndex == ~0){
+        throw std::runtime_error("Could not find a queue for graphics and presentation.");
+    }
+    
+    // querying for Vulkan 1.3 features, and dynamic state
     vk::PhysicalDeviceFeatures2 deviceFeatures{};
     vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain{
         {}, // vk::PhysicalDeviceFeatures2 (empty)
         {.dynamicRendering = true}, // Enable dynamic rendering from Vulkan 1.3
         {.extendedDynamicState = true } // Enable extended dynamic state from the extension
+    };
+
+    // Create Queue
+    float queuePriority = 0.5f;
+    vk::DeviceQueueCreateInfo deviceQueueCreateInfo = vk::DeviceQueueCreateInfo{
+        .queueFamilyIndex = queueIndex,
+        .queueCount = 1,
+        .pQueuePriorities = &queuePriority
     };
 
     // logical device create info struct
@@ -154,80 +249,10 @@ void Application::createLogicalDevice() {
     };
 
     device = vk::raii::Device(selectedPhysicalDevice, deviceCreateInfo);
-    graphicsQueue = vk::raii::Queue(device, graphicsIndex, 0);
+    graphicsQueue = vk::raii::Queue(device, queueIndex, 0);
 }
 
-// runs the main vulkan loop
-void Application::mainLoop() {
-    while (!glfwWindowShouldClose(window)) { // checks if window should close, if not, then stay open
-        glfwPollEvents(); // process input events
-    }
-}
-// cleans up vulkan resources
-void Application::cleanup() {
-    glfwDestroyWindow(window); // destroys current window
-
-    glfwTerminate(); // terminates glfw
-}
-
-// function to create a vulkan instance
-void Application::createInstance() {
-    // get the required validation layers
-    std::vector<const char*> requiredLayers;
-
-    if (enableValidationLayers) {
-        requiredLayers.assign(validationLayers.begin(), validationLayers.end());
-    }
-
-    // Check if the required extensions are supported by the Vulkan implementation.
-    auto layerProperties = context.enumerateInstanceLayerProperties();
-    // only grabs the first unsupported layer. find_if returns an iterator to the first one.
-    auto unsupportedPropertyIt = std::ranges::find_if(requiredLayers, [&layerProperties](auto const& requiredLayer) {
-        return std::ranges::none_of(layerProperties, [requiredLayer](auto const& layerProperty) {return strcmp(requiredLayer, layerProperty.layerName) == 0; });
-        }
-    );
-    if (unsupportedPropertyIt != requiredLayers.end()) {
-        throw std::runtime_error("Required Extension not supported: " + std::string(*unsupportedPropertyIt));
-    }
 
 
-    // create general application info for the instance
-    constexpr vk::ApplicationInfo appInfo = {
-        .pApplicationName = "OJApplication",
-        .applicationVersion = VK_MAKE_VERSION(1,0,0),
-        .pEngineName = "OJEngine",
-        .engineVersion = VK_MAKE_VERSION(1,0,0),
-        .apiVersion = vk::ApiVersion14,
-    };
-
-    // Get correct number of extensions required to use glfw:
-    uint32_t glfwExtensionCount = 0;
-    auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-    // check if the extensions are supported by our vulkan instance:
-    auto extensionProperties = context.enumerateInstanceExtensionProperties();
-    for (uint32_t i = 0; i < glfwExtensionCount; i++) {
-        if (std::ranges::none_of(extensionProperties, [glfwExtension = glfwExtensions[i]](auto const& extensionProperty)
-            {return strcmp(extensionProperty.extensionName, glfwExtension) == 0; }))
-        {
-            throw std::runtime_error("Required GLFW extension not supported: " + std::string(glfwExtensions[i]));
-        }
-
-    }
-    // global extensions and validation layers used
-    // finish instance creation
-    // TODO: ensure layers are added, with layercount and layer names.
-    // TODO: read up on layers, and extensions
-    vk::InstanceCreateInfo createInfo{
-        .pApplicationInfo = &appInfo,
-        .enabledLayerCount = static_cast<uint32_t>(requiredLayers.size()),
-        .ppEnabledLayerNames = requiredLayers.data(),
-        .enabledExtensionCount = glfwExtensionCount,
-        .ppEnabledExtensionNames = glfwExtensions,
-    };
-
-    // create instance
-    instance = vk::raii::Instance(context, createInfo);
-}
 
 }

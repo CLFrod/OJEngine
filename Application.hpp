@@ -1,4 +1,6 @@
 #pragma once
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -21,10 +23,10 @@ private:
 	GLFWwindow* window = nullptr; // window obj
 	vk::raii::Context context;
 	vk::raii::Instance instance = nullptr;
+	vk::raii::SurfaceKHR surface = nullptr;
 	vk::raii::PhysicalDevice selectedPhysicalDevice = nullptr;
 	vk::raii::Device device = nullptr;
-	vk::raii::Queue graphicsQueue;
-	vk::raii::SurfaceKHR surface = nullptr;
+	vk::raii::Queue graphicsQueue = nullptr;
 
 	void initWindow();
 	void initVulkan();
