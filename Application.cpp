@@ -44,7 +44,7 @@ void Application::initWindow() {
     glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // force no opengl
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE); // handling resized windows takes special care, disable.
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "OJ Engine", nullptr, nullptr);
 }
 // initializes vulkan instance, and etc.
 void Application::initVulkan() {
@@ -208,7 +208,7 @@ void Application::pickPhysicalDevice() {
     }
 }
 
-
+// Method to create a logical device
 void Application::createLogicalDevice() {
     // get available queue info for the gpu
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties = selectedPhysicalDevice.getQueueFamilyProperties();
@@ -252,6 +252,15 @@ void Application::createLogicalDevice() {
     graphicsQueue = vk::raii::Queue(device, queueIndex, 0);
 }
 
+vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableSurfaceFormats) {
+    assert(!availableSurfaceFormats.empty());
+    
+    const auto formatIt = std::ranges::find_if(availableSurfaceFormats, [](const vk::SurfaceFormatKHR& format) {
+        return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear;
+        });
+
+    return formatIt != availableSurfaceFormats.end() ? *formatIt : availableSurfaceFormats[0];
+}
 
 
 

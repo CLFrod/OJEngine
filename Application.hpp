@@ -42,5 +42,7 @@ private:
 
 	// Logical Device Creation:
 	void createLogicalDevice();
+
+	vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableSurfaceFormats);
 };
 }
